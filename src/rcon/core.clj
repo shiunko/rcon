@@ -91,10 +91,89 @@
                                                    connection)))))
     response))
 
+(defn ^BigInteger bytes->int
+  [^bytes bytes & {:keys [little-endian]
+                   :or   {little-endian true}}]
+  (let [b (if little-endian (reverse bytes) bytes)]
+    (->> b
+         (cons (byte 0))
+         (byte-array)
+         (biginteger))))
+
+(defn ^bytes int->bytes
+  [number & {:keys [little-endian len]
+             :or   {little-endian true
+                    len           4}}]
+  (let [buffer (loop [buf (vec (repeat len number))
+                      i 0]
+                 (if (< i (count buf))
+                   (recur (update buf i #(bit-shift-right (bit-and (bit-shift-left 0xff (* 8 i)) %) (* 8 i))) (inc i))
+                   (byte-array buf)))]
+    (if-not little-endian
+      (reverse buffer)
+      buffer)))
+
+(defn build-rcon
+  [id protocol content]
+  (let [cmd (-> (str content) (.getBytes "UTF-8"))]
+    (byte-array (concat (vec (int->bytes (+ 10 (count cmd))))
+                        (vec (int->bytes (int id)))
+                        (vec (int->bytes protocol))
+                        (vec cmd)
+                        (vec (int->bytes 0 {:len 2}))))
+    ))
+
 (comment
 
+  (cons (byte 0) (byte-array 1))
   (def c (connect "127.0.0.1" 25575 "123456"))
   (deref c)
   (deref (exec @c "kill @e[type=item]"))
   (deref (exec @c "say hello from rcon."))
+  (.close @c)
+
+
+  (b/c-string "UTF-8")
+
+  (def client (aleph.tcp/client {:host "192.168.1.2"
+                                 :port 25575}))
+
+  (require '[manifold.stream :as s])
+  (deref client)
+  (bytes->decode codecs/packet-codec @(s/take! @client))
+  @(s/put! @client (build-rcon 0 codecs/serverdata-auth "12345"))
+  @(s/put! @client (build-rcon 22 codecs/serverdata-exec "forge tps"))
+
+
+
+  (let [cmd (-> "12345" .getBytes)
+        protocol 3]
+    (prn (vec cmd))
+    (prn (concat (vec (int->bytes (+ 10 (count cmd))))
+                 (vec (int->bytes 1))
+                 (vec (int->bytes protocol))
+                 (vec cmd)
+                 (vec (int->bytes 0 {:len 2}))))
+    )
+
+
+
+  (update (vec (repeat 4 564654)) 0 inc)
+
+  (bit-shift-left 0xff 8)
+  (bit-shift-right (bit-and (bit-shift-left 0xff 8) 256) 8)
+
+  (-> (loop [buf (vec (repeat 4 2456456))
+             i 0]
+        (if (< i (count buf))
+          (recur (update buf i #(bit-shift-right (bit-and (bit-shift-left 0xff (* 8 i)) %) (* 8 i))) (inc i))
+          buf))
+      byte-array
+      bytes->int
+      )
+
+  (-> 45646512
+      int->bytes
+      bytes->int)
+
   )
